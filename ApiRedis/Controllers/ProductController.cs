@@ -19,12 +19,12 @@ namespace ApiRedis.Controllers
         }
 
         [HttpGet("{id}")]
-        public async Task<ActionResult<Product>> GetProduct(int id)
+        public async Task<ActionResult> GetProduct(int id)
         {
             var cachedProduct = await _cache.GetStringAsync($"product_{id}");
             if (cachedProduct != null)
             {
-                return JsonSerializer.Deserialize<Product>(cachedProduct);
+                return Ok(JsonSerializer.Deserialize<Product>(cachedProduct));
             }
 
             var product = await _context.Products.FindAsync(id);
@@ -32,27 +32,34 @@ namespace ApiRedis.Controllers
             {
                 return NotFound();
             }
-
+            var cacheOptions = new DistributedCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(30)
+            };
             // Cache do produto
-            await _cache.SetStringAsync($"product_{id}", JsonSerializer.Serialize(product));
+            await _cache.SetStringAsync($"product_{id}", JsonSerializer.Serialize(product), cacheOptions);
 
-            return product;
+            return Ok(product);
         }
 
         [HttpPost("enserir")]
-        public async Task<ActionResult<Product>> CreateProduct(Product product)
+        public async Task<ActionResult> CreateProduct([FromBody] Product product)
         {
             _context.Products.Add(product);
             await _context.SaveChangesAsync();
+            var cacheOptions = new DistributedCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(30)
+            };
 
             // Cache do novo produto
-            await _cache.SetStringAsync($"product_{product.Id}", JsonSerializer.Serialize(product));
+            await _cache.SetStringAsync($"product_{product.Id}", JsonSerializer.Serialize(product), cacheOptions);
 
             return CreatedAtAction(nameof(GetProduct), new { id = product.Id }, product);
         }
 
         [HttpPut("{id}")]
-        public async Task<IActionResult> UpdateProduct(int id, Product product)
+        public async Task<IActionResult> UpdateProduct(int id,[FromBody] Product product)
         {
             if (id != product.Id)
             {
@@ -61,9 +68,13 @@ namespace ApiRedis.Controllers
 
             _context.Entry(product).State = EntityState.Modified;
             await _context.SaveChangesAsync();
+            var cacheOptions = new DistributedCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(30)
+            };
 
             // Atualizar o cache
-            await _cache.SetStringAsync($"product_{product.Id}", JsonSerializer.Serialize(product));
+            await _cache.SetStringAsync($"product_{product.Id}", JsonSerializer.Serialize(product), cacheOptions);
 
             return NoContent();
         }
