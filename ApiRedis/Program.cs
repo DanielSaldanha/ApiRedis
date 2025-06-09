@@ -22,6 +22,12 @@ builder.Services.AddStackExchangeRedisCache(options =>
     options.Configuration = "localhost:6379"; // Altere para o seu endpoint do Redis, se necessário
 });
 
+// Configura o MemoryCache
+builder.Services.AddMemoryCache();
+
+// Adiciona suporte para controladores
+builder.Services.AddControllers();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
