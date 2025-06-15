@@ -72,6 +72,8 @@ namespace ApiRedis.Controllers
             return Ok(product);
         }
 
+
+
         [HttpPost("enserir")]
         public async Task<ActionResult> CreateProduct([FromBody] Product product)
         {
@@ -94,6 +96,57 @@ namespace ApiRedis.Controllers
 
             return CreatedAtAction(nameof(GetProduct), new { id = product.Id }, product);
         }
+
+        [HttpGet("GetAll")]
+        public async Task<ActionResult> GetAll()
+        {
+            // layer 1 - MemoryCache
+            if (_Mcache.TryGetValue("all_products", out List<Product> products))
+            {
+                Console.WriteLine("Layer 1 - All Products");
+                return Ok(products);
+            }
+
+            // layer 2 - Redis
+            var cachedProducts = await _Rcache.GetStringAsync("all_products");
+            if (cachedProducts != null)
+            {
+                var productsFromRedis = JsonSerializer.Deserialize<List<Product>>(cachedProducts);
+                var cacheOptions = new MemoryCacheEntryOptions
+                {
+                    AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10),
+                    SlidingExpiration = TimeSpan.FromMinutes(10)
+                };
+                _Mcache.Set("all_products", productsFromRedis, cacheOptions);
+                Console.WriteLine("Layer 2 - All Products");
+                return Ok(productsFromRedis);
+            }
+
+            // layer 3 - Database
+            products = await _context.Products.ToListAsync();
+            if (products == null || products.Count == 0)
+            {
+                return NotFound();
+            }
+
+            // Atualiza os caches
+            var memoryOptions = new MemoryCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10),
+                SlidingExpiration = TimeSpan.FromMinutes(10)
+            };
+            _Mcache.Set("all_products", products, memoryOptions);
+
+            var distributedOptions = new DistributedCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(30)
+            };
+            await _Rcache.SetStringAsync("all_products", JsonSerializer.Serialize(products), distributedOptions);
+
+            Console.WriteLine("Layer 3 - All Products");
+            return Ok(products);
+        }
+
 
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateProduct(int id,[FromBody] Product product)
